@@ -713,6 +713,7 @@ function shell(content){
     <div class="brand" style="display:flex;gap:10px;align-items:center"><div class="mark">F</div><h2>Finanças da Casa</h2></div>
     <nav class="nav" aria-label="Módulos">${NAV.map(([k,t])=>k==='-'?`<div class="navsep">${t}</div>`:`<button class="${view===k?'on':''} ${k==='athos'?'athos':''}" data-act="nav" data-v="${k}"><span>${t}</span>${k==='conselheiro'&&nA?`<span class="cnt">${nA}</span>`:''}${k==='contas'&&nCP?`<span class="cnt">${nCP}</span>`:''}</button>`).join('')}</nav>
     <div class="session"><div><div class="lbl">Sessão</div><b>${esc(me.nome)}</b></div><button class="btn sm" data-act="logout">Sair</button></div>
+    <div class="muted" style="font-size:11px;padding:0 4px">Versão 1.3 · com Contas a pagar</div>
   </aside><main>${content}</main></div>`;
 }
 function topBar(titulo,acoes=''){
