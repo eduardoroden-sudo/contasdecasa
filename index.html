@@ -170,20 +170,28 @@ details summary{cursor:pointer;font-weight:600}
 <div id="modal" hidden></div>
 <div id="toast" class="toast" hidden></div>
 
+<script src="config.js" onerror="void 0"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ============================================================
    Finanças da Casa — versão final com Supabase
-   1. Rode supabase-1-estrutura.sql e supabase-2-usuarios.sql no SQL Editor.
-   2. Preencha as configurações abaixo (Project Settings > API no Supabase).
-   3. Publique este arquivo em qualquer hospedagem de site estático.
+   Preencha a URL e a chave do Supabase no bloco CONFIGURAÇÃO logo abaixo.
+   Funciona sozinho: não precisa de nenhum outro arquivo.
    ============================================================ */
-const SUPABASE_URL='https://nbmbyuxgrjzgtegbveti.supabase.co';
-const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5ibWJ5dXhncmp6Z3RlZ2J2ZXRpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM4MDAxNzksImV4cCI6MjEwOTM3NjE3OX0.2PT-Tq2usp8P9rztUeW2sX8R2JKm4q_346xmCzgvGCo';
-const USUARIOS=[
-  {nome:'Eduardo Rohden',email:'eduardoroden@gmail.com'},
-  {nome:'Helen Barros',email:'helbarros@gmail.com'}
-];
+/* ===== CONFIGURAÇÃO: preencha as duas linhas abaixo (Supabase > Project Settings > API) ===== */
+const CONFIG_LOCAL={
+  supabaseUrl:'https://nbmbyuxgrjzgtegbveti.supabase.co',
+  supabaseAnonKey:'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5ibWJ5dXhncmp6Z3RlZ2J2ZXRpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM4MDAxNzksImV4cCI6MjEwOTM3NjE3OX0.2PT-Tq2usp8P9rztUeW2sX8R2JKm4q_346xmCzgvGCo',
+  usuarios:[
+    {nome:'Eduardo Rohden',email:'eduardoroden@gmail.com'},
+    {nome:'Helen Barros',email:'helbarros@gmail.com'}
+  ]
+};
+/* Se existir um config.js na mesma pasta, ele tem prioridade (opcional). */
+const CFG_EXT=Object.assign({},CONFIG_LOCAL,window.FINANCAS_CONFIG||{});
+const SUPABASE_URL=CFG_EXT.supabaseUrl;
+const SUPABASE_ANON_KEY=CFG_EXT.supabaseAnonKey;
+const USUARIOS=CFG_EXT.usuarios;
 const pad=n=>String(n).padStart(2,'0');
 const hoje=()=>{const d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())};
 const ymOf=s=>String(s||'').slice(0,7);
@@ -207,16 +215,17 @@ const ESC_NOME={pessoal:'Pessoal',athos:'Athos'};
 const configurado=!SUPABASE_URL.includes('SEU-PROJETO')&&!SUPABASE_ANON_KEY.includes('SUA-CHAVE');
 const sb=configurado&&window.supabase?window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY):null;
 const CFG_PADRAO={alerta_orcamento:85,alerta_cartao:70,saldo_minimo:2000,reserva_meses:6,dias_vencimento:5,limite_parcelas:15};
-let S={household:null,users:[],categorias:[],contas:[],cartoes:[],lancamentos:[],metas:[],aportes:[],investimentos:[],movInv:[],config:{...CFG_PADRAO},auditoria:[]};
-const TAB={lancamentos:'lancamentos',cartoes:'cartoes',metas:'metas',aportes:'aportes',investimentos:'investimentos',categorias:'categorias',contas:'contas',users:'profiles'};
+let S={household:null,users:[],categorias:[],contas:[],cartoes:[],lancamentos:[],metas:[],aportes:[],investimentos:[],movInv:[],contasPagar:[],semContasPagar:false,config:{...CFG_PADRAO},auditoria:[]};
+const TAB={contasPagar:'contas_pagar',lancamentos:'lancamentos',cartoes:'cartoes',metas:'metas',aportes:'aportes',investimentos:'investimentos',categorias:'categorias',contas:'contas',users:'profiles'};
 const COLS={
   categorias:['id','nome','tipo','escopo','grupo','orcamento'],
   contas:['id','nome','tipo'],
   cartoes:['id','nome','limite','fechamento','vencimento'],
-  lancamentos:['id','tipo','escopo','descricao','valor','data','categoria_id','conta_id','cartao_id','parcelas','recorrencia','ate','obs','autor','editado_por','editado_em'],
+  lancamentos:['id','tipo','escopo','descricao','valor','data','categoria_id','conta_id','cartao_id','parcelas','recorrencia','ate','obs','autor','conta_pagar_id','competencia','editado_por','editado_em'],
   metas:['id','nome','tipo','prioridade','alvo','prazo','autor'],
   aportes:['id','meta_id','valor','data','obs','autor'],
   investimentos:['id','nome','tipo','liquidez','aplicado','atual','vencimento','status','encerrado_em','autor'],
+  contas_pagar:['id','nome','escopo','categoria_id','conta_id','dia_vencimento','valor_estimado','inicio','ativo','obs','autor'],
   profiles:['id','nome']
 };
 const ym2d=ym=>ym?ym+'-01':null,d2ym=d=>d?String(d).slice(0,7):'';
@@ -225,6 +234,8 @@ function toDb(tab,o){
   const r={};(COLS[tab]||[]).forEach(k=>{if(o[k]!==undefined)r[k]=o[k]===''?null:o[k]});
   if(tab==='lancamentos'){r.ate=ym2d(o.ate);r.recorrencia=o.recorrencia||'nao'}
   if(tab==='metas')r.prazo=ym2d(o.prazo);
+  if(tab==='lancamentos')r.competencia=ym2d(o.competencia);
+  if(tab==='contas_pagar')r.inicio=ym2d(o.inicio);
   if(tab==='categorias'&&r.tipo==='receita'){r.grupo=null;r.orcamento=0}
   return r;
 }
@@ -234,6 +245,8 @@ function fromDb(tab,r){
   if(tab==='cartoes'){o.fechamento=+o.fechamento;o.vencimento=+o.vencimento}
   if(tab==='lancamentos'){o.ate=d2ym(o.ate);o.valores=[];o.obs=o.obs||''}
   if(tab==='metas')o.prazo=d2ym(o.prazo);
+  if(tab==='lancamentos')o.competencia=d2ym(o.competencia);
+  if(tab==='contas_pagar'){o.inicio=d2ym(o.inicio);o.valor_estimado=+o.valor_estimado||0;o.dia_vencimento=+o.dia_vencimento;o.obs=o.obs||''}
   if(tab==='investimentos')o.vencimento=o.vencimento||'';
   if(tab==='categorias')o.grupo=o.grupo||'';
   return o;
@@ -256,6 +269,7 @@ async function carregar(){
   lv.forEach(v=>{const l=byId[v.lancamento_id];if(l)l.valores.push({id:v.id,desde:d2ym(v.desde),valor:+v.valor})});
   S.metas=mt.map(r=>fromDb('metas',r));S.aportes=ap.map(r=>fromDb('aportes',r));S.investimentos=inv.map(r=>fromDb('investimentos',r));
   S.movInv=bx.map(r=>({...fromDb('investimento_baixas',r),inv_id:r.investimento_id})).sort((a,b)=>b.data.localeCompare(a.data));
+  try{S.contasPagar=(await fetchAll('contas_pagar','dia_vencimento')).map(r=>fromDb('contas_pagar',r));S.semContasPagar=false}catch(e){S.contasPagar=[];S.semContasPagar=true}
   S.config={...CFG_PADRAO,...((cf.data||{}).parametros||{})};
   if(me){const m=S.users.find(u=>u.id===me.id);if(m)me={...m,email:me.email}}
 }
@@ -311,7 +325,25 @@ function itensMes(m,tipo,escopo='todos'){
     if(l.cartao_id){[addM(m,-1),m].forEach(mm=>{const o=ocorrencia(l,mm);if(o)parcelasDe(o).forEach(p=>{if(p.m===m)out.push({...o,valorMes:p.valor,parc:p})})});continue}
     const o=ocorrencia(l,m);if(o)out.push({...o,valorMes:+o.valor});
   }
+  if(tipo==='despesa')out.push(...cpPrevistos(m,escopo));
   return out;
+}
+/* ---------------- Contas a pagar ---------------- */
+const cpAtivas=m=>S.contasPagar.filter(b=>b.ativo!==false&&(!b.inicio||b.inicio<=m));
+const cpPago=(b,m)=>S.lancamentos.find(l=>l.conta_pagar_id===b.id&&l.competencia===m);
+const cpVenc=(b,m)=>m+'-'+pad(Math.min(+b.dia_vencimento||1,diasNoMes(m)));
+function cpValorRef(b){if(+b.valor_estimado>0)return +b.valor_estimado;const u=S.lancamentos.filter(l=>l.conta_pagar_id===b.id).sort((a,c)=>c.data.localeCompare(a.data))[0];return u?+u.valor:0}
+function cpStatus(b,m){
+  const p=cpPago(b,m);if(p)return{s:'pago',p};
+  const v=cpVenc(b,m),h=hoje();if(v<h)return{s:'atrasada',dias:Math.round((new Date(h+'T12:00')-new Date(v+'T12:00'))/864e5)};
+  const dias=Math.round((new Date(v+'T12:00')-new Date(h+'T12:00'))/864e5);
+  return{s:dias<=S.config.dias_vencimento?'breve':'aberta',dias};
+}
+function cpPendencias(){const m=curYM(),out=[];[addM(m,-1),m].forEach(mm=>cpAtivas(mm).forEach(b=>{const st=cpStatus(b,mm);if(st.s==='atrasada'||st.s==='breve')out.push({b,m:mm,st})}));return out}
+function cpPrevistos(m,escopo){
+  if(m<curYM())return[];
+  return cpAtivas(m).filter(b=>(escopo==='todos'||b.escopo===escopo)&&!cpPago(b,m)).map(b=>({b,v:cpValorRef(b)})).filter(x=>x.v>0)
+    .map(({b,v})=>({id:'cp:'+b.id,cp:b.id,tipo:'despesa',escopo:b.escopo,descricao:b.nome,categoria_id:b.categoria_id,conta_id:b.conta_id,cartao_id:null,data:cpVenc(b,m),valor:v,valorMes:v,parcelas:1,recorrencia:'nao',autor:b.autor}));
 }
 const aportesMes=m=>S.aportes.filter(a=>ymOf(a.data)===m).reduce((s,a)=>s+ +a.valor,0);
 const sum=(a,k='valorMes')=>a.reduce((s,x)=>s+ +x[k],0);
@@ -334,6 +366,9 @@ const invAtivos=()=>S.investimentos.filter(i=>i.status!=='encerrado');
 /* ---------------- Alertas e conselhos ---------------- */
 function alertas(m){
   const r=resumo(m),C=S.config,A=[];
+  if(m===curYM())cpPendencias().forEach(({b,m:mm,st})=>A.push(st.s==='atrasada'
+    ?{n:'crit',t:`${b.nome} está atrasada`,p:`Venceu em ${dataBR(cpVenc(b,mm))}${mm!==m?' (conta de '+mesNome(mm)+')':''}. ${cpValorRef(b)?'Valor de referência '+brl(cpValorRef(b))+'. ':''}Marque como paga em Contas a pagar.`}
+    :{n:'warn',t:`${b.nome} vence ${st.dias===0?'hoje':'em '+st.dias+' dia(s)'}`,p:`Vencimento em ${dataBR(cpVenc(b,mm))}${cpValorRef(b)?', valor de referência '+brl(cpValorRef(b)):''}.`}));
   if(r.saldo<0)A.push({n:'crit',t:'Mês fecha no vermelho',p:`Despesas e aportes de ${mesNome(m)} (pessoal + Athos) superam as receitas em ${brl(-r.saldo)}.`});
   else if(r.saldo<C.saldo_minimo)A.push({n:'warn',t:'Sobra abaixo do mínimo definido',p:`A sobra prevista é ${brl(r.saldo)}, abaixo do mínimo de ${brl(C.saldo_minimo)}.`});
   S.categorias.filter(c=>c.tipo==='despesa'&&+c.orcamento>0).forEach(c=>{
@@ -422,6 +457,37 @@ const SCHEMA={
       const novoV=+n.valor;n.valores=[...(old.valores||[]).filter(x=>x.desde<ref),{desde:ref,valor:novoV}];n.valor=old.valor;
       return `valor recorrente: ${brl(atual)} → ${brl(novoV)} a partir de ${mesNome(ref)}`},
     label:o=>o.descricao},
+  contasPagar:{nome:'conta fixa',titulo:old=>old?'Editar conta fixa':'Nova conta fixa',fields:()=>[
+    {k:'nome',l:'Nome',t:'text',req:1,full:1,ph:()=>'Ex.: DAS, Energia elétrica, Condomínio'},
+    {k:'escopo',l:'Pertence a',t:'select',o:[['pessoal','Pessoal'],['athos','Athos (empresa)']]},
+    {k:'categoria_id',l:'Categoria',t:'select',o:v=>S.categorias.filter(c=>c.tipo==='despesa'&&(c.escopo||'pessoal')===v.escopo).map(c=>[c.id,c.nome])},
+    {k:'dia_vencimento',l:'Dia de vencimento',t:'number',req:1},
+    {k:'valor_estimado',l:'Valor de referência (R$, 0 se varia)',t:'number'},
+    {k:'conta_id',l:'Normalmente pago pela conta',t:'select',o:()=>S.contas.map(c=>[c.id,c.nome])},
+    {k:'inicio',l:'Começa a valer em',t:'month',req:1},
+    {k:'ativo',l:'Situação',t:'select',o:[['true','Ativa'],['false','Pausada']]},
+    {k:'resumo',t:'info',full:1,info:v=>`Todo mês, a partir de ${mesNome(v.inicio)}, aparece na lista com vencimento no dia ${v.dia_vencimento||'?'}. ${+v.valor_estimado>0?'O valor de referência entra na previsão do mês até você marcar como paga.':'Sem valor de referência, a previsão usa o último valor pago.'}`},
+    {k:'obs',l:'Observação',t:'text',full:1}],
+    novo:()=>({escopo:'pessoal',dia_vencimento:10,valor_estimado:0,inicio:curYM(),ativo:'true',conta_id:S.contas[0]?.id||''}),
+    toForm:o=>({...o,ativo:String(o.ativo!==false)}),
+    fromForm:o=>{o.ativo=o.ativo==='true';o.dia_vencimento=Math.min(31,Math.max(1,Math.round(o.dia_vencimento||1)));delete o.resumo;return o},
+    label:o=>o.nome},
+  pagar:{custom:1,source:'contasPagar',titulo:b=>'Paguei: '+b.nome,fields:ctx=>[
+    {k:'valor',l:'Valor pago (R$)',t:'number',req:1},
+    {k:'data',l:'Data do pagamento',t:'date',req:1},
+    {k:'forma',l:'Pago com',t:'select',o:[...S.contas.map(c=>['conta:'+c.id,c.nome]),...S.cartoes.map(c=>['cartao:'+c.id,'Cartão '+c.nome])]},
+    {k:'competencia',l:'Referente ao mês',t:'month',req:1},
+    {k:'escopo',l:'Lançar como despesa',t:'select',o:[['pessoal','Pessoal'],['athos','Athos']]},
+    {k:'categoria_id',l:'Categoria',t:'select',o:v=>S.categorias.filter(c=>c.tipo==='despesa'&&(c.escopo||'pessoal')===v.escopo).map(c=>[c.id,c.nome])},
+    {k:'info',t:'info',full:1,info:(v,c)=>v.competencia?`Vencimento em ${dataBR(cpVenc(c.old,v.competencia))}. Será lançado ${brl(+v.valor||0)} como despesa ${v.escopo==='athos'?'da Athos':'pessoal'}${v.data&&v.data>cpVenc(c.old,v.competencia)?', pago com atraso':''}.`:''},
+    {k:'obs',l:'Observação',t:'text',full:1}],
+    novo:b=>({valor:cpValorRef(b)||'',data:hoje(),forma:'conta:'+(b.conta_id||S.contas[0]?.id||''),competencia:curYM(),escopo:b.escopo,categoria_id:b.categoria_id,obs:''}),
+    save:async(v,b)=>{
+      if(!(+v.valor>0))return 'Informe o valor pago.';
+      if(cpPago(b,v.competencia))return `${b.nome} já está marcada como paga em ${mesNome(v.competencia)}.`;
+      const[t,id]=String(v.forma).split(':');
+      await dbInsert('lancamentos',toDb('lancamentos',{id:uid(),tipo:'despesa',escopo:v.escopo,descricao:b.nome+(v.competencia!==ymOf(v.data)?' ('+mesNome(v.competencia)+')':''),valor:+v.valor,data:v.data,categoria_id:v.categoria_id,conta_id:t==='conta'?id:null,cartao_id:t==='cartao'?id:null,parcelas:1,recorrencia:'nao',ate:'',obs:v.obs,autor:me.id,conta_pagar_id:b.id,competencia:v.competencia}));
+      return null}},
   cartoes:{nome:'cartão',fields:()=>[
     {k:'nome',l:'Nome do cartão',t:'text',req:1,full:1},{k:'limite',l:'Limite (R$)',t:'number',req:1},
     {k:'fechamento',l:'Dia de fechamento',t:'number',req:1},{k:'vencimento',l:'Dia de vencimento',t:'number',req:1}],
@@ -501,7 +567,7 @@ function calcBaixa(inv,v){
   const custo=v.quanto==='total'?+inv.aplicado:(+inv.atual?inv.aplicado*(saida/inv.atual):0);
   return{saida,custo,res:(+v.recebido||0)-custo};
 }
-const ENT_NOME={lancamentos:'Lançamento',cartoes:'Cartão',metas:'Meta',aportes:'Aporte',investimentos:'Investimento',categorias:'Categoria',contas:'Conta',users:'Usuário'};
+const ENT_NOME={contasPagar:'Conta fixa',lancamentos:'Lançamento',cartoes:'Cartão',metas:'Meta',aportes:'Aporte',investimentos:'Investimento',categorias:'Categoria',contas:'Conta',users:'Usuário'};
 function showVal(k,v){
   if(v===null||v===undefined||v==='')return '—';
   if(k==='categoria_id')return catLabel(catOf(v));
@@ -509,6 +575,8 @@ function showVal(k,v){
   if(k==='cartao_id')return(cartaoOf(v)||{}).nome||'—';
   if(k==='meta_id')return(S.metas.find(m=>m.id===v)||{}).nome||'—';
   if(k==='escopo')return ESC_NOME[v]||v;
+  if(k==='conta_pagar_id')return(S.contasPagar.find(b=>b.id===v)||{}).nome||'—';
+  if(k==='ativo')return v?'ativa':'pausada';
   if(k==='recorrencia')return{nao:'não repete',mensal:'mensal',anual:'anual'}[v]||v;
   if(['valor','alvo','limite','aplicado','atual','orcamento'].includes(k))return brl(v);
   return String(v);
@@ -534,7 +602,7 @@ function openForm(ent,id,preset={}){
         :`<input id="f_${f.k}" type="${f.t}" ${f.t==='number'?`step="0.01" inputmode="decimal" ${f.min?'min="'+f.min+'"':''}`:''} value="${esc(vals[f.k]??'')}" ${f.req?'required':''} ${f.ph?`placeholder="${esc(f.ph(vals))}"`:''} ${f.t==='password'?'autocomplete="off"':''}>`}</div>`}).join('')}
     <p id="ferr" class="full err" hidden></p></form>
     <div class="foot">${old&&!sc.custom?`<button class="btn danger" data-act="del" data-ent="${ent}" data-id="${id}" style="margin-right:auto">Excluir</button>`:''}
-      <button class="btn" data-act="close">Cancelar</button><button class="btn pri" data-act="save">${sc.custom&&ent==='baixa'?'Confirmar baixa':'Salvar'}</button></div></div></div>`;
+      <button class="btn" data-act="close">Cancelar</button><button class="btn pri" data-act="save">${ent==='pagar'?'Lançar pagamento':sc.custom&&ent==='baixa'?'Confirmar baixa':'Salvar'}</button></div></div></div>`;
   M.hidden=false;
   const frm=document.getElementById('frm');frm.addEventListener('input',refreshForm);frm.addEventListener('change',refreshForm);
   refreshForm();
@@ -579,7 +647,7 @@ async function saveForm(){
         await dbInsert(tab,toDb(tab,{...novo,id:uid(),autor:me.id}));
       }
     }
-    await recarregar();closeModal();toast(ent==='baixa'?'Baixa registrada':'Salvo');render();
+    await recarregar();closeModal();toast(ent==='baixa'?'Baixa registrada':ent==='pagar'?'Pagamento lançado':'Salvo');render();
   }catch(e){falha('Não foi possível salvar: '+(e.message||e))}
 }
 function askDelete(ent,id){
@@ -598,13 +666,13 @@ function closeModal(){const M=document.getElementById('modal');M.hidden=true;M.i
 let tt;function toast(t){const e=document.getElementById('toast');e.textContent=t;e.hidden=false;clearTimeout(tt);tt=setTimeout(()=>e.hidden=true,1900)}
 
 /* ---------------- Telas ---------------- */
-const NAV=[['painel','Painel'],['lancamentos','Lançamentos'],['cartoes','Cartões'],['metas','Metas e reformas'],['investimentos','Investimentos'],['orcamento','Orçamento'],['conselheiro','Conselheiro'],['-','Empresa'],['athos','ATHOS'],['-','Sistema'],['historico','Histórico'],['config','Configurações']];
+const NAV=[['painel','Painel'],['lancamentos','Lançamentos'],['contas','Contas a pagar'],['cartoes','Cartões'],['metas','Metas e reformas'],['investimentos','Investimentos'],['orcamento','Orçamento'],['conselheiro','Conselheiro'],['-','Empresa'],['athos','ATHOS'],['-','Sistema'],['historico','Histórico'],['config','Configurações']];
 
 function telaMsg(titulo,texto){
   document.getElementById('root').innerHTML=`<div class="login"><div class="brand"><div class="mark">F</div><h1>Finanças da Casa</h1></div><div class="panel"><h2>${titulo}</h2><div>${texto}</div></div></div>`;
 }
 function vLogin(){
-  if(!sb){telaMsg('Falta configurar o Supabase','Abra este arquivo num editor de texto e preencha <b>SUPABASE_URL</b>, <b>SUPABASE_ANON_KEY</b> e os e-mails em <b>USUARIOS</b>, no começo do script. Os dois valores ficam no Supabase em Project Settings &gt; API.');return}
+  if(!sb){telaMsg('Falta configurar o Supabase','Abra o index.html num editor de texto e, no bloco <b>CONFIGURAÇÃO</b> no começo do script, preencha <b>supabaseUrl</b> e <b>supabaseAnonKey</b> (Supabase &gt; Project Settings &gt; API).');return}
   let sel=0;
   document.getElementById('root').innerHTML=`<div class="login">
     <div class="brand"><div class="mark">F</div><div><h1>Finanças da Casa</h1><div class="muted">Ganhos, gastos e investimentos do casal e da Athos</div></div></div>
@@ -640,10 +708,10 @@ function assinarTempoReal(){
       await recarregar();if(view==='historico')await carregarAuditoria();render()},900)}).subscribe();
 }
 function shell(content){
-  const nA=alertas(mes).filter(a=>a.n==='crit'||a.n==='warn').length;
+  const nA=alertas(mes).filter(a=>a.n==='crit'||a.n==='warn').length,nCP=cpPendencias().length;
   return `<div class="app"><aside class="side">
     <div class="brand" style="display:flex;gap:10px;align-items:center"><div class="mark">F</div><h2>Finanças da Casa</h2></div>
-    <nav class="nav" aria-label="Módulos">${NAV.map(([k,t])=>k==='-'?`<div class="navsep">${t}</div>`:`<button class="${view===k?'on':''} ${k==='athos'?'athos':''}" data-act="nav" data-v="${k}"><span>${t}</span>${k==='conselheiro'&&nA?`<span class="cnt">${nA}</span>`:''}</button>`).join('')}</nav>
+    <nav class="nav" aria-label="Módulos">${NAV.map(([k,t])=>k==='-'?`<div class="navsep">${t}</div>`:`<button class="${view===k?'on':''} ${k==='athos'?'athos':''}" data-act="nav" data-v="${k}"><span>${t}</span>${k==='conselheiro'&&nA?`<span class="cnt">${nA}</span>`:''}${k==='contas'&&nCP?`<span class="cnt">${nCP}</span>`:''}</button>`).join('')}</nav>
     <div class="session"><div><div class="lbl">Sessão</div><b>${esc(me.nome)}</b></div><button class="btn sm" data-act="logout">Sair</button></div>
   </aside><main>${content}</main></div>`;
 }
@@ -704,10 +772,10 @@ function lancRows(f,hideEsc){
   if(!rows.length)return '<div class="empty">Nenhum lançamento neste mês com esses filtros.</div>';
   return `<table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Conta / cartão</th><th>Quem lançou</th><th class="v">Valor no mês</th><th></th></tr></thead><tbody>
   ${rows.map(x=>{const prev=!x.cartao_id&&x.data>h;return `<tr class="${prev?'prev':''}"><td class="mono">${dataBR(x.data)}</td>
-    <td>${esc(x.descricao)} ${x.parc&&x.parc.n>1?`<span class="chip acc">${x.parc.i}/${x.parc.n}</span>`:''}${recorrente(x)?` <span class="chip acc">${x.recorrencia}</span>`:''}${!hideEsc&&x.escopo==='athos'?' <span class="chip warn">Athos</span>':''}${prev?' <span class="chip">previsto</span>':''}${x.editado_por?` <span class="chip" title="Editado por ${esc(userNome(x.editado_por))}">editado por ${esc(primeiroNome(x.editado_por))}</span>`:''}</td>
+    <td>${esc(x.descricao)} ${x.parc&&x.parc.n>1?`<span class="chip acc">${x.parc.i}/${x.parc.n}</span>`:''}${recorrente(x)?` <span class="chip acc">${x.recorrencia}</span>`:''}${!hideEsc&&x.escopo==='athos'?' <span class="chip warn">Athos</span>':''}${x.cp?' <span class="chip warn">a pagar</span>':prev?' <span class="chip">previsto</span>':''}${x.editado_por?` <span class="chip" title="Editado por ${esc(userNome(x.editado_por))}">editado por ${esc(primeiroNome(x.editado_por))}</span>`:''}</td>
     <td>${esc(catOf(x.categoria_id).nome)}</td><td class="muted">${x.cartao_id?'Cartão '+esc((cartaoOf(x.cartao_id)||{}).nome||''):esc((contaOf(x.conta_id)||{}).nome||'—')}</td>
     <td class="muted">${esc(primeiroNome(x.autor))}</td><td class="v ${x.tipo==='receita'?'pos':''}">${x.tipo==='receita'?'+':'−'} ${brl(x.valorMes)}</td>
-    <td class="act"><button class="icon" data-act="edit" data-ent="lancamentos" data-id="${x.id}">Editar</button></td></tr>`}).join('')}
+    <td class="act">${x.cp?`<button class="btn sm pri" data-act="pagar" data-id="${x.cp}" data-m="${mes}">Paguei</button>`:`<button class="icon" data-act="edit" data-ent="lancamentos" data-id="${x.id}">Editar</button>`}</td></tr>`}).join('')}
   </tbody><tfoot><tr><td colspan="5"><b>Resultado filtrado</b></td><td class="v ${tot<0?'neg':'pos'}"><b>${brl(tot)}</b></td><td></td></tr></tfoot></table>`;
 }
 function recPanel(escopo){
@@ -720,6 +788,35 @@ function recPanel(escopo){
     <td class="mono">${mesNome(ymOf(l.data))}</td><td class="mono">${l.ate?mesNome(l.ate):'sem fim'}</td><td class="v">${brl(valorEm(l,curYM()))}</td>
     <td class="act"><button class="icon" data-act="edit" data-ent="lancamentos" data-id="${l.id}">Editar</button>${ativo(l)?`<button class="icon" data-act="encerrar" data-id="${l.id}">Encerrar</button>`:''}</td></tr>`).join('')||'<tr><td colspan="7" class="muted">Nenhum lançamento recorrente. Ao criar um lançamento, escolha "Sim, todo mês".</td></tr>'}
   </tbody></table></div></section>`;
+}
+function vContasPagar(){
+  if(S.semContasPagar)return topBar('Contas a pagar')+`<section class="panel"><h2>Falta um passo no banco</h2><p>Rode o arquivo <b>supabase-3-contas-a-pagar.sql</b> no SQL Editor do Supabase e recarregue a página.</p></section>`;
+  const L=[];
+  if(mes===curYM())cpAtivas(addM(mes,-1)).forEach(b=>{if(!cpPago(b,addM(mes,-1)))L.push({b,m:addM(mes,-1),st:cpStatus(b,addM(mes,-1))})});
+  cpAtivas(mes).forEach(b=>L.push({b,m:mes,st:cpStatus(b,mes)}));
+  const ord={atrasada:0,breve:1,aberta:2,pago:3};L.sort((a,c)=>ord[a.st.s]-ord[c.st.s]||a.m.localeCompare(c.m)||a.b.dia_vencimento-c.b.dia_vencimento);
+  const doMes=L.filter(x=>x.m===mes),pagas=doMes.filter(x=>x.st.p),valPago=pagas.reduce((s,x)=>s+ +x.st.p.valor,0),falta=doMes.filter(x=>!x.st.p).reduce((s,x)=>s+cpValorRef(x.b),0);
+  const nAt=L.filter(x=>x.st.s==='atrasada').length,nBr=L.filter(x=>x.st.s==='breve').length;
+  const chip=x=>x.st.s==='pago'?'<span class="chip pos">Paga</span>':x.st.s==='atrasada'?`<span class="chip neg">Atrasada${x.m!==mes?' · '+mesNome(x.m):''}</span>`:x.st.s==='breve'?`<span class="chip warn">Vence ${x.st.dias===0?'hoje':'em '+x.st.dias+' d'}</span>`:'<span class="chip">A pagar</span>';
+  const linhas=L.map(x=>{const b=x.b,p=x.st.p,ref=cpValorRef(b);return `<tr class="${p?'prev':''}"><td>${chip(x)}</td>
+    <td><b>${esc(b.nome)}</b>${b.escopo==='athos'?' <span class="chip warn">Athos</span>':''}<div class="muted" style="font-size:12px">${esc(catOf(b.categoria_id).nome)}</div></td>
+    <td class="mono">${dataBR(cpVenc(b,x.m))}</td>
+    <td class="v">${p?brl(p.valor):ref?`<span class="muted">${brl(ref)}</span>`:'<span class="muted">—</span>'}</td>
+    <td class="muted">${p?`Paga em ${dataBR(p.data)} por ${esc(primeiroNome(p.autor))}`:ref?'valor de referência':'informe ao pagar'}</td>
+    <td class="act">${p?`<button class="icon" data-act="del" data-ent="lancamentos" data-id="${p.id}">Desfazer</button>`:`<button class="btn sm pri" data-act="pagar" data-id="${b.id}" data-m="${x.m}">Paguei</button>`}</td></tr>`}).join('');
+  const cad=S.contasPagar.slice().sort((a,c)=>a.dia_vencimento-c.dia_vencimento).map(b=>`<tr class="${b.ativo===false?'prev':''}"><td>${esc(b.nome)}${b.escopo==='athos'?' <span class="chip warn">Athos</span>':''}</td><td class="muted">${esc(catOf(b.categoria_id).nome)}</td><td class="mono">dia ${b.dia_vencimento}</td><td class="v">${b.valor_estimado?brl(b.valor_estimado):'<span class="muted">varia</span>'}</td><td>${b.ativo===false?'<span class="chip">pausada</span>':'<span class="chip acc">ativa</span>'}</td><td class="act"><button class="icon" data-act="edit" data-ent="contasPagar" data-id="${b.id}">Editar</button><button class="icon" data-act="del" data-ent="contasPagar" data-id="${b.id}">Excluir</button></td></tr>`).join('');
+  return topBar('Contas a pagar',`<button class="btn pri" data-act="new" data-ent="contasPagar">Nova conta fixa</button>`)+
+  `<div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+    <div class="kpi"><span class="lbl">Contas do mês</span><span class="v">${doMes.length}</span><span class="s">${brl0(valPago+falta)} previsto</span></div>
+    <div class="kpi"><span class="lbl">Já pagas</span><span class="v pos">${pagas.length}</span><span class="s">${brl(valPago)}</span></div>
+    <div class="kpi"><span class="lbl">Falta pagar</span><span class="v">${brl(falta)}</span><span class="s">pelos valores de referência</span></div>
+    <div class="kpi" style="border-right:0"><span class="lbl">Atenção</span><span class="v ${nAt?'neg':nBr?'warnc':'pos'}">${nAt+nBr}</span><span class="s">${nAt} atrasada(s), ${nBr} vencendo</span></div></div>
+  <section class="panel"><div class="panel-h"><h2>${mesLongo(mes)}</h2><span class="muted">Clique em Paguei, confirme o valor e a despesa é lançada.</span></div>
+    ${L.length?`<div class="tbl-wrap"><table><thead><tr><th>Situação</th><th>Conta</th><th>Vencimento</th><th class="v">Valor</th><th></th><th></th></tr></thead><tbody>${linhas}</tbody></table></div>`
+      :`<div class="empty">Nenhuma conta fixa ativa neste mês.</div><div><button class="btn" data-act="cp-sugestoes">Incluir DAS, energia, água, condomínio e internet</button></div>`}</section>
+  <section class="panel"><div class="panel-h"><h2>Contas fixas cadastradas</h2><button class="btn sm" data-act="new" data-ent="contasPagar">Adicionar</button></div>
+    ${cad?`<div class="tbl-wrap"><table><tbody>${cad}</tbody></table></div>`:'<div class="empty">Cadastre as contas que se repetem todo mês. Elas aparecem aqui com o lembrete de vencimento.</div>'}
+    <div class="muted" style="font-size:12px">Para parar de lembrar uma conta sem perder o histórico, edite e coloque em "Pausada". Os lembretes usam o prazo de aviso definido em Configurações.</div></section>`;
 }
 function vLanc(){
   return topBar('Lançamentos',`<button class="btn" data-act="new" data-ent="lancamentos" data-preset="receita">Nova receita</button><button class="btn pri" data-act="new" data-ent="lancamentos">Nova despesa</button>`)+
@@ -850,11 +947,11 @@ function simular(){
   if(n==='ok'&&par>1)ps.push('Se houver desconto à vista maior que o rendimento da reserva no período, compensa pagar à vista.');
   out.innerHTML=`<div class="verdict ${n}"><h3>${esc(t)}</h3><div class="muted">${esc(desc)} · ${brl(val)}</div>${ps.map(p=>`<div>${p}</div>`).join('')}</div>`;
 }
-const TAB_NOME={lancamentos:'Lançamento',lancamento_valores:'Reajuste recorrente',cartoes:'Cartão',metas:'Meta',aportes:'Aporte',investimentos:'Investimento',investimento_baixas:'Baixa de investimento',categorias:'Categoria',contas:'Conta',profiles:'Usuário',config:'Configuração'};
+const TAB_NOME={contas_pagar:'Conta fixa',lancamentos:'Lançamento',lancamento_valores:'Reajuste recorrente',cartoes:'Cartão',metas:'Meta',aportes:'Aporte',investimentos:'Investimento',investimento_baixas:'Baixa de investimento',categorias:'Categoria',contas:'Conta',profiles:'Usuário',config:'Configuração'};
 const ACAO_NOME={insert:'criou',update:'alterou',delete:'excluiu'};
 const IGN_AUD=['editado_em','editado_por','criado_em','household_id','id','autor'];
-const CAMPO_NOME={descricao:'descrição',valor:'valor',data:'data',categoria_id:'categoria',conta_id:'conta',cartao_id:'cartão',parcelas:'parcelas',recorrencia:'recorrência',ate:'até',escopo:'pertence a',obs:'observação',nome:'nome',limite:'limite',fechamento:'fechamento',vencimento:'vencimento',alvo:'alvo',prazo:'prazo',prioridade:'prioridade',aplicado:'aplicado',atual:'atual',status:'situação',orcamento:'orçamento',grupo:'grupo',tipo:'tipo',meta_id:'meta',liquidez:'liquidez'};
-const fmtAud=(k,v)=>k==='ate'||k==='prazo'?(v?mesNome(d2ym(v)):'sem fim'):k==='data'||k==='encerrado_em'?dataBR(v):showVal(k,v);
+const CAMPO_NOME={dia_vencimento:'dia de vencimento',valor_estimado:'valor de referência',inicio:'começa em',ativo:'situação',competencia:'referente a',conta_pagar_id:'conta fixa',descricao:'descrição',valor:'valor',data:'data',categoria_id:'categoria',conta_id:'conta',cartao_id:'cartão',parcelas:'parcelas',recorrencia:'recorrência',ate:'até',escopo:'pertence a',obs:'observação',nome:'nome',limite:'limite',fechamento:'fechamento',vencimento:'vencimento',alvo:'alvo',prazo:'prazo',prioridade:'prioridade',aplicado:'aplicado',atual:'atual',status:'situação',orcamento:'orçamento',grupo:'grupo',tipo:'tipo',meta_id:'meta',liquidez:'liquidez'};
+const fmtAud=(k,v)=>k==='ate'||k==='prazo'||k==='inicio'||k==='competencia'?(v?mesNome(d2ym(v)):'sem fim'):k==='data'||k==='encerrado_em'?dataBR(v):showVal(k,v);
 function rotuloAud(t,r){
   if(!r)return '';
   if(t==='aportes')return((S.metas.find(m=>m.id===r.meta_id)||{}).nome||'Meta')+' · '+brl(r.valor);
@@ -907,7 +1004,7 @@ function vConfig(){
 /* ---------------- Render e eventos ---------------- */
 function render(){
   if(!me){vLogin();return}
-  const V={painel:vPainel,lancamentos:vLanc,cartoes:vCartoes,metas:vMetas,investimentos:vInv,orcamento:vOrc,conselheiro:vConselheiro,athos:vAthos,historico:vHist,config:vConfig};
+  const V={painel:vPainel,lancamentos:vLanc,cartoes:vCartoes,metas:vMetas,investimentos:vInv,orcamento:vOrc,conselheiro:vConselheiro,athos:vAthos,contas:vContasPagar,historico:vHist,config:vConfig};
   document.getElementById('root').innerHTML=shell((V[view]||vPainel)());
   if(view==='lancamentos'){
     const up=()=>{document.getElementById('lancTable').innerHTML=lancRows(F)};
@@ -943,6 +1040,12 @@ document.addEventListener('click',async e=>{
   else if(a==='new')openForm(b.dataset.ent,null,presetFor(b.dataset.ent,b.dataset.preset));
   else if(a==='edit')openForm(b.dataset.ent,b.dataset.id);
   else if(a==='baixa')openForm('baixa',b.dataset.id);
+  else if(a==='pagar')openForm('pagar',b.dataset.id,{competencia:b.dataset.m||curYM()});
+  else if(a==='cp-sugestoes'){
+    const pj=(S.contas.find(c=>c.tipo==='Empresa')||S.contas[0]||{}).id||null,pf=(S.contas[0]||{}).id||null;
+    const sug=[['DAS','athos','Impostos (DAS)',20,pj],['Energia elétrica','pessoal','Energia e água',10,pf],['Água','pessoal','Energia e água',15,pf],['Condomínio','pessoal','Moradia',10,pf],['Internet e telefone','pessoal','Assinaturas e internet',10,pf]];
+    try{for(const[nome,escopo,cat,dia,conta]of sug)if(!S.contasPagar.some(x=>x.nome===nome))await dbInsert('contas_pagar',toDb('contas_pagar',{id:uid(),nome,escopo,categoria_id:catId(cat,'despesa',escopo)||null,conta_id:conta,dia_vencimento:dia,valor_estimado:0,inicio:curYM(),ativo:true,obs:'',autor:me.id}));
+      await recarregar();render();toast('Contas incluídas. Ajuste os dias de vencimento em Editar.')}catch(x){toast('Não foi possível incluir: '+x.message)}}
   else if(a==='senha')openForm('senha',me.id);
   else if(a==='save')saveForm();
   else if(a==='close'){closeModal();if(assinarTempoReal.pendente){assinarTempoReal.pendente=false;await recarregar();render()}}
