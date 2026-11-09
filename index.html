@@ -512,8 +512,8 @@ function alertas(m){
     ?(extratoImportado(b.conta_id,mm)?{n:'crit',t:`${b.nome} de ${mesNome(mm)} não apareceu no extrato`,p:`Venceu em ${dataBR(cpVenc(b,mm))} e não foi encontrada no extrato importado. Se já pagou por outro meio, marque em Contas do mês.`}
       :{n:'crit',t:`${b.nome} está atrasada`,p:`Venceu em ${dataBR(cpVenc(b,mm))}${mm!==m?' (conta de '+mesNome(mm)+')':''}. ${cpValorRef(b)?'Valor de referência '+brl(cpValorRef(b))+'. ':''}Marque como paga em Contas do mês.`})
     :{n:'warn',t:`${b.nome} vence ${st.dias===0?'hoje':'em '+st.dias+' dia(s)'}`,p:`Vencimento em ${dataBR(cpVenc(b,mm))}${cpValorRef(b)?', valor de referência '+brl(cpValorRef(b)):''}.`}));
-  if(r.saldo<0)A.push({n:'crit',t:'Mês fecha no vermelho',p:`Despesas e aportes de ${mesNome(m)} (pessoal + Athos) superam as receitas em ${brl(-r.saldo)}.`});
-  else if(r.saldo<C.saldo_minimo)A.push({n:'warn',t:'Sobra abaixo do mínimo definido',p:`A sobra prevista é ${brl(r.saldo)}, abaixo do mínimo de ${brl(C.saldo_minimo)}.`});
+  if(r.rec>0&&r.saldo<0)A.push({n:'crit',t:'Mês fecha no vermelho',p:`Despesas e aportes de ${mesNome(m)} (pessoal + Athos) superam as receitas em ${brl(-r.saldo)}.`});
+  else if(r.rec>0&&r.saldo<C.saldo_minimo)A.push({n:'warn',t:'Sobra abaixo do mínimo definido',p:`A sobra prevista é ${brl(r.saldo)}, abaixo do mínimo de ${brl(C.saldo_minimo)}.`});
   S.categorias.filter(c=>c.tipo==='despesa'&&+c.orcamento>0).forEach(c=>{
     const g=r.porCat[c.id]||0,u=g/c.orcamento*100;
     if(u>100)A.push({n:'crit',t:`${catLabel(c)} estourou o orçamento`,p:`Gasto de ${brl(g)} contra ${brl(c.orcamento)} previstos (${pct(u)}).`});
@@ -875,7 +875,7 @@ function shell(content){
       const aberto=navMais||NAV_MAIS.some(([k])=>k===view);
       return NAV.map(bt).join('')+`<button class="navmais" data-act="navmais" aria-expanded="${aberto}"><span>${aberto?'Menos opções':'Mais opções'}</span><span>${aberto?'−':'+'}</span></button>`+(aberto?NAV_MAIS.map(bt).join(''):'')})()}</nav>
     <div class="session"><div><div class="lbl">Sessão</div><b>${esc(me.nome)}</b></div><button class="btn sm" data-act="logout">Sair</button></div>
-    <div class="muted" style="font-size:11px;padding:0 4px">Versão 1.9</div>
+    <div class="muted" style="font-size:11px;padding:0 4px">Versão 1.9.1</div>
   </aside><main>${content}</main></div><button class="fab" data-act="new" data-ent="lancamentos" data-preset="${view==='athos'?'athos':''}">+ Lançar</button>`;
 }
 function topBar(titulo,acoes=''){
@@ -971,9 +971,10 @@ function proximosVencimentos(){
 }
 function agregar(meses,vis){
   const A={rec:0,desp:0,porCat:{},porRec:{},centros:{},meios:{},prevRec:0,prevDesp:0,n:meses.length},h=hoje();
-  meses.forEach(m=>{const r=resumo(m,vis);A.rec+=r.rec;A.desp+=r.desp;
-    r.D.forEach(x=>{const v=x.valorMes;A.porCat[x.categoria_id]=(A.porCat[x.categoria_id]||0)+v;const c=centroDe(x,vis);A.centros[c]=(A.centros[c]||0)+v;const mm=meioDe(x);A.meios[mm]=(A.meios[mm]||0)+v;if(x.cp||x.data>h)A.prevDesp+=v});
-    r.R.forEach(x=>{A.porRec[x.categoria_id]=(A.porRec[x.categoria_id]||0)+x.valorMes;if(x.data>h)A.prevRec+=x.valorMes})});
+  // soma só o que já aconteceu; o que ainda vai entrar ou sair fica em prevRec e prevDesp
+  meses.forEach(m=>{const r=resumo(m,vis);
+    r.D.forEach(x=>{const v=x.valorMes;if(x.cp||x.data>h){A.prevDesp+=v;return}A.desp+=v;A.porCat[x.categoria_id]=(A.porCat[x.categoria_id]||0)+v;const c=centroDe(x,vis);A.centros[c]=(A.centros[c]||0)+v;const mm=meioDe(x);A.meios[mm]=(A.meios[mm]||0)+v});
+    r.R.forEach(x=>{if(x.data>h){A.prevRec+=x.valorMes;return}A.rec+=x.valorMes;A.porRec[x.categoria_id]=(A.porRec[x.categoria_id]||0)+x.valorMes})});
   return A;
 }
 const mesesAteSel=()=>{const ano=mes.slice(0,4);return Array.from({length:+mes.slice(5)},(_,i)=>ano+'-'+pad(i+1))};
@@ -1009,7 +1010,7 @@ function rotina(){
       :`<span>${fat.map(f=>`Fatura ${esc(f.k.nome)} ${f.imp?'<span class="chip pos">importada</span>':'<span class="chip">fecha dia '+f.k.fechamento+'</span>'}`).join(' ')}</span><span class="muted" style="font-size:12px">fatura de ${mesNome(mes)}</span>`}<button class="btn sm ${!extratoImportado(null,addM(mes,-1))||fatPend.length?'pri':''}" data-act="nav" data-v="importar">Importar</button></div></div>`;
 }
 function graficoMesAMes(){
-  const ano=mes.slice(0,4),cur=curYM(),ms=Array.from({length:12},(_,i)=>ano+'-'+pad(i+1)),D=ms.map(m=>{const r=resumo(m,visao);return{m,rec:r.rec,desp:r.desp}});
+  const ano=mes.slice(0,4),cur=curYM(),ms=Array.from({length:12},(_,i)=>ano+'-'+pad(i+1)),D=ms.map(m=>{const r=m<=cur?agregar([m],visao):resumo(m,visao);return{m,rec:r.rec,desp:r.desp}});
   const mx=Math.max(1,...D.map(d=>Math.max(d.rec,d.desp)))*1.1,W=720,H=240,pl=46,pb=24,cw=(W-pl-8)/12,bw=Math.min(16,cw*.32),Y=v=>(H-pb)-(v/mx)*(H-pb-10),h0=H-pb;
   let g='';for(let i=0;i<=4;i++){const v=mx/4*i;g+=`<line class="g" x1="${pl}" x2="${W-8}" y1="${Y(v)}" y2="${Y(v)}"/><text x="${pl-6}" y="${Y(v)+3}" text-anchor="end">${kfmt(v)}</text>`}
   D.forEach((d,i)=>{const cx=pl+cw*i+cw/2,op=d.m>cur?.4:1;
@@ -1027,20 +1028,20 @@ function graficoMesAMes(){
     <div class="muted" style="font-size:12px">Meses futuros mostram o que já está previsto: salário e gastos que se repetem, parcelas e contas do mês.</div></section>`;
 }
 function vPainel(){
-  const ano=mes.slice(0,4),r=resumo(mes,visao),rp=resumo(addM(mes,-1),visao),M=agregar([mes],visao),Y=agregar(mesesAteSel(),visao);
+  const ano=mes.slice(0,4),M=agregar([mes],visao),Mp=agregar([addM(mes,-1)],visao),Y=agregar(mesesAteSel(),visao),r={rec:M.rec,desp:M.desp},rp={rec:Mp.rec,desp:Mp.desp};
   const seg=`<div class="seg" role="group" aria-label="Visão">${[['todos','Tudo'],['pessoal','Pessoal'],['athos','Athos']].map(([k,t])=>`<button class="${visao===k?'on':''}" data-act="visao" data-v="${k}">${t}</button>`).join('')}</div>`;
   const A=alertas(mes).filter(a=>(a.n==='crit'||a.n==='warn')&&!/^Fatura |vence |está atrasada/.test(a.t));
   const per=`jan a ${MESES[+mes.slice(5)-1]}`;
   const linha=(k,cor,val,sub,cls='')=>`<div class="res-row"><span class="k">${cor?`<i style="background:var(${cor})"></i>`:''}${k}</span><span class="val ${cls}">${brl(val)}</span><span class="sub">${sub}</span></div>`;
   const usoBar=(gas,gan)=>`<div><div class="uso" title="Gastou ${pct(gan?gas/gan*100:0)} do que ganhou"><i style="width:${Math.min(100,gan?gas/gan*100:0)}%"></i></div><div class="muted" style="font-size:12px;margin-top:4px">Gastou ${pct(gan?gas/gan*100:0)} do que ganhou · sobrou ${pct(gan?(gan-gas)/gan*100:0)}</div></div>`;
   const resM=`<section class="panel"><div class="panel-h"><h2>${mesLongo(mes)}</h2><span class="muted">no mês</span></div><div class="res">
-      ${linha('Ganhos','--c-gan',r.rec,`${variacao(r.rec,rp.rec,true)||'—'} em relação a ${mesNome(addM(mes,-1))} (${brl0(rp.rec)})${M.prevRec?' · '+brl0(M.prevRec)+' ainda vão entrar':''}`,'pos')}
-      ${linha('Gastos','--c-gas',r.desp,`${variacao(r.desp,rp.desp,false)||'—'} em relação a ${mesNome(addM(mes,-1))} (${brl0(rp.desp)})${M.prevDesp?' · '+brl0(M.prevDesp)+' ainda a pagar':''}`,'neg')}
+      ${linha('Ganhos','--c-gan',r.rec,`${variacao(r.rec,rp.rec,true)||'—'} em relação a ${mesNome(addM(mes,-1))} (${brl0(rp.rec)})${M.prevRec?' · mais '+brl0(M.prevRec)+' previstos, ainda não somados':''}`,'pos')}
+      ${linha('Gastos','--c-gas',r.desp,`${variacao(r.desp,rp.desp,false)||'—'} em relação a ${mesNome(addM(mes,-1))} (${brl0(rp.desp)})${M.prevDesp?' · mais '+brl0(M.prevDesp)+' de contas a pagar, ainda não somadas':''}`,'neg')}
       ${linha('Sobra',null,r.rec-r.desp,'ganhos menos gastos do mês',r.rec-r.desp<0?'neg':'')}
       ${usoBar(r.desp,r.rec)}</div></section>`;
   const resA=`<section class="panel"><div class="panel-h"><h2>Acumulado de ${ano}</h2><span class="muted">${per} · ${Y.n} ${Y.n>1?'meses':'mês'}</span></div><div class="res">
       ${linha('Ganhos','--c-gan',Y.rec,`média de ${brl0(Y.rec/Y.n)} por mês`,'pos')}
-      ${linha('Gastos','--c-gas',Y.desp,`média de ${brl0(Y.desp/Y.n)} por mês · ${mesNome(mes)} ${r.desp>Y.desp/Y.n?'acima':'abaixo'} da média`,'neg')}
+      ${linha('Gastos','--c-gas',Y.desp,`média de ${brl0(Y.desp/Y.n)} por mês ${Y.desp?` · ${mesNome(mes)} ${r.desp>Y.desp/Y.n?'acima':'abaixo'} da média`:''}`,'neg')}
       ${linha('Sobra',null,Y.rec-Y.desp,`média de ${brl0((Y.rec-Y.desp)/Y.n)} por mês`,Y.rec-Y.desp<0?'neg':'')}
       ${usoBar(Y.desp,Y.rec)}</div></section>`;
   return topBar('Painel',seg)+rotina()+
