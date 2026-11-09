@@ -1457,7 +1457,7 @@ function regraExtrato(tipoB,nome,receita){
   if(/^RGE|AESSUL|CPFL/.test(n)||/CPFL/.test(T))return['Energia (RGE)','pessoal'];
   if(/MUNICIPIODECANELA|PREFMUNCANELA|IPTU/.test(n))return['IPTU e taxas','pessoal'];
   if(/PAGAMENTOFATURACARTAO|FATURACARTAO|PAGAMENTOFATURA/.test(n)||/FATURA/.test(T))return['Cartão Inter (fatura)','pessoal'];
-  if(/BANCOC6/.test(n))return['Banco C6','pessoal'];
+  if(/BANCOC6/.test(n))return['Parcela do carro (C6)','pessoal'];
   if(/LUIZACRED/.test(n))return['LuizaCred','pessoal'];
   if(/UNIMED/.test(n))return['Unimed','pessoal'];
   if(/DEBITOAUTOMATICO/.test(T))return['Débito automático','pessoal'];
@@ -1470,7 +1470,7 @@ function regraExtrato(tipoB,nome,receita){
   if(RX_SAUDE.test(n))return['Saúde','pessoal'];
   if(RX_EDU.test(n))return['Educação','pessoal'];
   if(RX_PET.test(n))return['Pets','pessoal'];
-  if(/PIXENVIADO/.test(T))return['Pix para pessoas','pessoal'];
+  if(/PIXENVIADO/.test(T))return['Pix para particulares','pessoal'];
   if(/COMPRANODEBITO/.test(T))return['Outras compras','pessoal'];
   return['Outros','pessoal'];
 }
